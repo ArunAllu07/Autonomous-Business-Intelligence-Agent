@@ -26,3 +26,6 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 .env
+
+data/chroma/chroma.sqlite3
+data/memory.json
