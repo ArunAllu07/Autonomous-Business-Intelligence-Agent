@@ -1,16 +1,89 @@
-# React + Vite
+# 🚀 AURA — Autonomous Business Intelligence Agent
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+> An agentic AI system that autonomously researches, analyzes, queries business data, remembers context, and produces grounded answers using specialized AI agents and tools.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🌐 Try AURA
 
-## React Compiler
+### 💬 AURA Chatbot
+[Open AURA Chatbot](http://localhost:5173)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### ⚡ FastAPI Backend
+[Open FastAPI Backend](http://127.0.0.1:8000)
 
-## Expanding the Oxlint configuration
+### 📚 API Documentation
+[Open Swagger Docs](http://127.0.0.1:8000/docs)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+### ❤️ API Health
+[Check AURA Health](http://127.0.0.1:8000/health)
+
+> These links work when AURA is running locally.
+
+---
+
+# 🧠 What is AURA?
+
+AURA is a production-oriented **multi-agent AI system** designed to answer business and research questions by selecting the appropriate agent and tools instead of relying only on an LLM response.
+
+AURA can:
+
+- 🔎 Perform web research
+- 📊 Analyze business data
+- 🗄️ Query PostgreSQL databases
+- 📄 Retrieve information from documents/CV using RAG
+- 🧠 Maintain short-term and long-term memory
+- 🧮 Perform calculations
+- 🛡️ Block unsafe SQL operations
+- 🔄 Coordinate multiple specialized agents
+- 🧪 Evaluate generated responses
+- 📈 Monitor requests and agent execution
+
+---
+
+# 🏗️ System Architecture
+
+```text
+                         USER
+                           │
+                           ▼
+                 ┌──────────────────┐
+                 │    AURA API      │
+                 │     FastAPI      │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │   ORCHESTRATOR   │
+                 │  Agent Manager   │
+                 └────────┬─────────┘
+                          │
+          ┌───────────────┼────────────────┐
+          │               │                │
+          ▼               ▼                ▼
+   ┌────────────┐  ┌────────────┐  ┌────────────┐
+   │ Research   │  │ SQL Agent  │  │ Data       │
+   │ Agent      │  │            │  │ Analyst    │
+   └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
+         │               │                │
+         ▼               ▼                ▼
+     Web Search      PostgreSQL        Business Data
+         │
+         ▼
+       RAG
+         │
+         └───────────────┐
+                         ▼
+                    ┌───────────┐
+                    │  Memory   │
+                    │Redis + DB │
+                    └─────┬─────┘
+                          │
+                          ▼
+                   ┌────────────┐
+                   │  Critic /  │
+                   │ Evaluator  │
+                   └─────┬──────┘
+                         │
+                         ▼
+                    FINAL ANSWER

@@ -34,13 +34,14 @@ def remove_sql_comments(sql: str) -> str:
     if not sql:
         return ""
 
+    # Remove -- comments
     cleaned = re.sub(
-        r"--.*?$",
+        r"--[^\n]*",
         "",
         sql,
-        flags=re.MULTILINE,
     )
 
+    # Remove /* ... */ comments
     cleaned = re.sub(
         r"/\*.*?\*/",
         "",
@@ -176,33 +177,44 @@ def is_read_only_sql(sql: str) -> bool:
 # SQL VALIDATION
 # ============================================================
 
-def validate_sql(sql: str) -> tuple[bool, str]:
+def validate_sql(sql: str) -> str:
     """
-    Validate SQL and return:
+    Validate SQL and return the cleaned SQL query.
 
-        (True, "OK")
+    Raises ValueError if the query is unsafe.
 
-    or
+    Successful result:
+        "SELECT SUM(revenue) FROM sales"
 
-        (False, "reason")
+    Failed result:
+        ValueError
     """
 
     if not sql or not sql.strip():
-        return False, "SQL query cannot be empty."
+        raise ValueError(
+            "SQL query cannot be empty."
+        )
 
-    cleaned = sql.strip()
+    cleaned = remove_sql_comments(sql)
+
+    if not cleaned:
+        raise ValueError(
+            "SQL query cannot be empty after removing comments."
+        )
 
     if len(cleaned) > 5000:
-        return False, "SQL query is too long."
+        raise ValueError(
+            "SQL query is too long."
+        )
 
     if not is_read_only_sql(cleaned):
-        return (
-            False,
+        raise ValueError(
             "Only single-statement read-only SELECT "
             "queries are allowed."
         )
 
-    return True, "OK"
+    # Return the actual validated SQL string.
+    return cleaned
 
 
 # ============================================================

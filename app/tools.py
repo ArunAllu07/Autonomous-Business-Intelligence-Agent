@@ -2,7 +2,6 @@ import ast
 import json
 import math
 import operator
-import os
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +16,12 @@ from app.cache import (
 from app.database import get_connection
 from app.guardrails import validate_sql
 
+
 load_dotenv()
 
 
 # ============================================================
-# Configuration
+# CONFIGURATION
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,7 +33,7 @@ CV_COLLECTION_NAME = "aura_cv"
 
 
 # ============================================================
-# ChromaDB / RAG
+# CHROMA / RAG
 # ============================================================
 
 chroma_client = chromadb.PersistentClient(
@@ -52,7 +52,7 @@ def _get_cv_collection():
 
 
 # ============================================================
-# Calculator
+# CALCULATOR
 # ============================================================
 
 _ALLOWED_BINARY_OPERATORS = {
@@ -78,7 +78,9 @@ def _safe_calculate_node(node: ast.AST) -> float:
         if isinstance(node.value, (int, float)):
 
             if isinstance(node.value, bool):
-                raise ValueError("Boolean values are not allowed.")
+                raise ValueError(
+                    "Boolean values are not allowed."
+                )
 
             return node.value
 
@@ -88,11 +90,11 @@ def _safe_calculate_node(node: ast.AST) -> float:
 
     if isinstance(node, ast.BinOp):
 
-        operator_function = _ALLOWED_BINARY_OPERATORS.get(
+        operation = _ALLOWED_BINARY_OPERATORS.get(
             type(node.op)
         )
 
-        if operator_function is None:
+        if operation is None:
             raise ValueError(
                 "Unsupported mathematical operator."
             )
@@ -100,7 +102,6 @@ def _safe_calculate_node(node: ast.AST) -> float:
         left = _safe_calculate_node(node.left)
         right = _safe_calculate_node(node.right)
 
-        # Prevent unnecessarily huge exponentiation.
         if isinstance(node.op, ast.Pow):
 
             if abs(right) > 100:
@@ -108,23 +109,20 @@ def _safe_calculate_node(node: ast.AST) -> float:
                     "Exponent is too large."
                 )
 
-            if abs(left) > 1000000:
+            if abs(left) > 1_000_000:
                 raise ValueError(
                     "Base is too large."
                 )
 
-        return operator_function(
-            left,
-            right,
-        )
+        return operation(left, right)
 
     if isinstance(node, ast.UnaryOp):
 
-        operator_function = _ALLOWED_UNARY_OPERATORS.get(
+        operation = _ALLOWED_UNARY_OPERATORS.get(
             type(node.op)
         )
 
-        if operator_function is None:
+        if operation is None:
             raise ValueError(
                 "Unsupported unary operator."
             )
@@ -133,7 +131,7 @@ def _safe_calculate_node(node: ast.AST) -> float:
             node.operand
         )
 
-        return operator_function(value)
+        return operation(value)
 
     raise ValueError(
         "Unsupported expression."
@@ -144,12 +142,9 @@ def _safe_calculate_node(node: ast.AST) -> float:
 def calculate(expression: str) -> str:
     """
     Safely calculate a mathematical expression.
-
-    Example:
-        847392 * 92847
     """
 
-    if not expression:
+    if not expression or not expression.strip():
         return "Error: expression is empty."
 
     expression = expression.strip()
@@ -177,11 +172,14 @@ def calculate(expression: str) -> str:
         return "Error: division by zero."
 
     except Exception as error:
-        return f"Error: invalid mathematical expression. {error}"
+        return (
+            "Error: invalid mathematical expression. "
+            f"{error}"
+        )
 
 
 # ============================================================
-# Web Search
+# WEB SEARCH
 # ============================================================
 
 @function_tool
@@ -200,7 +198,6 @@ def web_search(query: str) -> str:
 
     try:
 
-        # Prefer ddgs, which replaced duckduckgo_search.
         try:
             from ddgs import DDGS
 
@@ -210,9 +207,10 @@ def web_search(query: str) -> str:
                 from duckduckgo_search import DDGS
 
             except ImportError:
+
                 return (
-                    "Web search is unavailable because the "
-                    "search package is not installed."
+                    "Web search is unavailable because "
+                    "the search package is not installed."
                 )
 
         results = []
@@ -253,7 +251,9 @@ def web_search(query: str) -> str:
                 )
 
         if not results:
-            return "No reliable search results were found."
+            return (
+                "No reliable search results were found."
+            )
 
         return json.dumps(
             results,
@@ -269,14 +269,13 @@ def web_search(query: str) -> str:
 
 
 # ============================================================
-# CV / RAG Retrieval
+# CV / RAG RETRIEVAL
 # ============================================================
 
 @function_tool
 def retrieve_cv(query: str) -> str:
     """
-    Retrieve relevant information from Arun's CV
-    using the Chroma vector database.
+    Retrieve relevant information from Arun's CV.
     """
 
     if not query or not query.strip():
@@ -310,14 +309,14 @@ def retrieve_cv(query: str) -> str:
         )
 
         if not documents or not documents[0]:
-            return "No relevant CV information was found."
-
-        retrieved_documents = documents[0]
+            return (
+                "No relevant CV information was found."
+            )
 
         formatted_results = []
 
         for index, document in enumerate(
-            retrieved_documents,
+            documents[0],
             start=1,
         ):
 
@@ -338,7 +337,7 @@ def retrieve_cv(query: str) -> str:
 
 
 # ============================================================
-# Memory
+# LONG-TERM MEMORY
 # ============================================================
 
 @function_tool
@@ -347,7 +346,7 @@ def save_memory(
     memory_type: str = "conversation",
 ) -> str:
     """
-    Save information into AURA's long-term memory.
+    Save information into long-term memory.
     """
 
     if not content or not content.strip():
@@ -374,15 +373,11 @@ def save_memory(
         )
 
     except Exception:
-        return (
-            "Unable to save memory."
-        )
+        return "Unable to save memory."
 
 
 @function_tool
-def recall_memory(
-    query: str,
-) -> str:
+def recall_memory(query: str) -> str:
     """
     Retrieve relevant long-term memory.
     """
@@ -447,7 +442,9 @@ def recall_memory(
         )
 
         if not scored_memories:
-            return "No relevant memories were found."
+            return (
+                "No relevant memories were found."
+            )
 
         selected = [
             memory
@@ -461,13 +458,53 @@ def recall_memory(
         )
 
     except Exception:
+        return "Unable to retrieve memory."
+
+
+# ============================================================
+# EXPLICIT MEMORY SAVE
+# ============================================================
+
+@function_tool
+def remember_information(
+    content: str,
+) -> str:
+    """
+    Explicitly save information requested by the user
+    into AURA's long-term memory.
+    """
+
+    if not content or not content.strip():
+        return "Error: information to remember is empty."
+
+    content = content.strip()
+
+    if len(content) > 5000:
+        return "Error: information is too long."
+
+    try:
+
+        from app.memory import add_memory
+
+        saved = add_memory(
+            role="user",
+            content=content,
+            memory_type="explicit",
+        )
+
+        return json.dumps(
+            saved,
+            ensure_ascii=False,
+        )
+
+    except Exception:
         return (
-            "Unable to retrieve memory."
+            "Unable to save the requested information."
         )
 
 
 # ============================================================
-# Database Schema
+# DATABASE SCHEMA
 # ============================================================
 
 @function_tool
@@ -486,10 +523,6 @@ def get_database_schema() -> str:
         connection = get_connection()
         cursor = connection.cursor()
 
-        # ----------------------------------------------------
-        # PostgreSQL
-        # ----------------------------------------------------
-
         connection_module = (
             type(connection).__module__.lower()
         )
@@ -498,13 +531,18 @@ def get_database_schema() -> str:
             "psycopg" in connection_module
         )
 
+        # ----------------------------------------------------
+        # PostgreSQL
+        # ----------------------------------------------------
+
         if is_postgres:
 
             cursor.execute(
                 """
                 SELECT
                     column_name,
-                    data_type
+                    data_type,
+                    is_nullable
                 FROM information_schema.columns
                 WHERE table_schema = 'public'
                   AND table_name = 'sales'
@@ -512,46 +550,56 @@ def get_database_schema() -> str:
                 """
             )
 
+            rows = cursor.fetchall()
+
+            if not rows:
+                return (
+                    "The sales table does not exist "
+                    "or contains no schema information."
+                )
+
+            schema = []
+
+            for column_name, data_type, nullable in rows:
+
+                schema.append(
+                    {
+                        "column": column_name,
+                        "type": data_type,
+                        "nullable": nullable,
+                    }
+                )
+
+            return json.dumps(
+                schema,
+                ensure_ascii=False,
+                indent=2,
+            )
+
         # ----------------------------------------------------
         # SQLite
         # ----------------------------------------------------
 
-        else:
-
-            cursor.execute(
-                "PRAGMA table_info(sales)"
-            )
+        cursor.execute(
+            "PRAGMA table_info(sales)"
+        )
 
         rows = cursor.fetchall()
 
         if not rows:
-            return (
-                "No sales table schema was found."
-            )
+            return "The sales table was not found."
 
         schema = []
 
-        if is_postgres:
+        for row in rows:
 
-            for row in rows:
-
-                schema.append(
-                    {
-                        "column": row[0],
-                        "type": row[1],
-                    }
-                )
-
-        else:
-
-            for row in rows:
-
-                schema.append(
-                    {
-                        "column": row[1],
-                        "type": row[2],
-                    }
-                )
+            schema.append(
+                {
+                    "column": row[1],
+                    "type": row[2],
+                    "nullable": not bool(row[3]),
+                }
+            )
 
         return json.dumps(
             schema,
@@ -559,10 +607,11 @@ def get_database_schema() -> str:
             indent=2,
         )
 
-    except Exception:
+    except Exception as error:
 
         return (
-            "Unable to retrieve database schema."
+            "Unable to retrieve database schema. "
+            f"Reason: {error}"
         )
 
     finally:
@@ -583,7 +632,7 @@ def get_database_schema() -> str:
 
 
 # ============================================================
-# SQL Result Formatting
+# SQL RESULT FORMATTER
 # ============================================================
 
 def _rows_to_dicts(
@@ -612,11 +661,18 @@ def _rows_to_dicts(
 
             value = row[index]
 
-            # Convert special values to strings where needed.
-            if isinstance(
-                value,
-                (str, int, float, bool),
-            ) or value is None:
+            if (
+                isinstance(
+                    value,
+                    (
+                        str,
+                        int,
+                        float,
+                        bool,
+                    ),
+                )
+                or value is None
+            ):
 
                 result[column] = value
 
@@ -630,36 +686,19 @@ def _rows_to_dicts(
 
 
 # ============================================================
-# SQL Execution
+# SQL EXECUTION
 # ============================================================
 
 @function_tool
 def execute_sql(sql: str) -> str:
     """
-    Execute a read-only SQL query.
+    Execute a strictly read-only SQL query.
 
-    Redis caching is used for repeated read-only queries.
+    Supports PostgreSQL and SQLite.
 
-    Flow:
+    SQL is validated before execution.
 
-        SQL
-         ↓
-        validate_sql()
-         ↓
-        Redis cache
-         ↓
-       ┌───────┐
-       │       │
-      HIT     MISS
-       │       │
-       ↓       ↓
-    Result   Database
-                │
-                ↓
-              Redis
-                │
-                ↓
-              Result
+    Redis is used as a cache for repeated queries.
     """
 
     if not sql or not sql.strip():
@@ -674,7 +713,7 @@ def execute_sql(sql: str) -> str:
         )
 
     # --------------------------------------------------------
-    # Validate SQL BEFORE cache lookup
+    # SQL VALIDATION
     # --------------------------------------------------------
 
     try:
@@ -683,13 +722,48 @@ def execute_sql(sql: str) -> str:
 
     except Exception as error:
 
-        return (
-            "SQL validation failed. "
-            f"Reason: {error}"
+        return json.dumps(
+            {
+                "success": False,
+                "source": "validation",
+                "error": "SQL validation failed.",
+                "details": str(error),
+            },
+            ensure_ascii=False,
+        )
+
+    if not isinstance(
+        validated_sql,
+        str,
+    ):
+
+        return json.dumps(
+            {
+                "success": False,
+                "source": "validation",
+                "error": (
+                    "SQL validator returned an "
+                    "invalid result."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
+    validated_sql = validated_sql.strip()
+
+    if not validated_sql:
+
+        return json.dumps(
+            {
+                "success": False,
+                "source": "validation",
+                "error": "SQL query is empty after validation.",
+            },
+            ensure_ascii=False,
         )
 
     # --------------------------------------------------------
-    # Redis cache lookup
+    # REDIS CACHE
     # --------------------------------------------------------
 
     try:
@@ -710,12 +784,13 @@ def execute_sql(sql: str) -> str:
             )
 
     except Exception:
-        # Redis failure must never prevent
+
+        # Cache failure should never prevent
         # database execution.
         pass
 
     # --------------------------------------------------------
-    # Database execution
+    # DATABASE EXECUTION
     # --------------------------------------------------------
 
     connection = None
@@ -724,7 +799,6 @@ def execute_sql(sql: str) -> str:
     try:
 
         connection = get_connection()
-
         cursor = connection.cursor()
 
         cursor.execute(
@@ -739,7 +813,7 @@ def execute_sql(sql: str) -> str:
         )
 
         # ----------------------------------------------------
-        # Store successful result in Redis
+        # CACHE SUCCESSFUL RESULT
         # ----------------------------------------------------
 
         try:
@@ -750,8 +824,6 @@ def execute_sql(sql: str) -> str:
             )
 
         except Exception:
-            # Cache failure should never break
-            # a successful database request.
             pass
 
         return json.dumps(
@@ -793,7 +865,7 @@ def execute_sql(sql: str) -> str:
 
 
 # ============================================================
-# Tool Collection
+# AURA TOOL COLLECTION
 # ============================================================
 
 AURA_TOOLS = [
@@ -801,6 +873,7 @@ AURA_TOOLS = [
     web_search,
     retrieve_cv,
     save_memory,
+    remember_information,
     recall_memory,
     get_database_schema,
     execute_sql,

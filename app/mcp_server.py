@@ -9,6 +9,10 @@ from app.guardrails import (
 )
 
 
+# ============================================================
+# MCP SERVER
+# ============================================================
+
 mcp = MCPServer("AURA Business Data Server")
 
 
@@ -43,7 +47,6 @@ def get_sales_schema() -> str:
     cursor = None
 
     try:
-
         connection = get_connection()
         cursor = connection.cursor()
 
@@ -105,6 +108,7 @@ def get_sales_schema() -> str:
 
             column_name = column[1]
             data_type = column[2]
+
             nullable = (
                 "YES"
                 if column[3] == 0
@@ -198,7 +202,7 @@ def query_sales(sql: str) -> str:
             dict(
                 zip(
                     column_names,
-                    row
+                    row,
                 )
             )
             for row in rows
@@ -243,9 +247,7 @@ def execute_sql(sql: str) -> str:
 
     if len(cleaned_sql) > 5000:
 
-        return (
-            "SQL query is too long."
-        )
+        return "SQL query is too long."
 
     # --------------------------------------------------------
     # DANGEROUS OPERATION CHECK
@@ -289,9 +291,7 @@ def execute_sql(sql: str) -> str:
 
     if not parts:
 
-        return (
-            "SQL query cannot be empty."
-        )
+        return "SQL query cannot be empty."
 
     first_word = parts[0].upper()
 
@@ -347,9 +347,7 @@ def execute_sql(sql: str) -> str:
         if connection is not None:
             connection.rollback()
 
-        return (
-            "SQL operation failed."
-        )
+        return "SQL operation failed."
 
     finally:
 
@@ -358,6 +356,21 @@ def execute_sql(sql: str) -> str:
 
         if connection is not None:
             connection.close()
+
+
+# ============================================================
+# MCP SERVER FACTORY
+# ============================================================
+
+def create_mcp_server():
+    """
+    Return the configured AURA MCP server.
+
+    The FastAPI application and orchestrator use this
+    factory to access the configured MCP server.
+    """
+
+    return mcp
 
 
 # ============================================================
