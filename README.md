@@ -1,89 +1,89 @@
-# AURA — Autonomous Business Intelligence Agent
+# 🚀 AURA — Autonomous Business Intelligence Agent
 
-AURA is a production-oriented agentic AI system designed to research information, analyze business data, use external tools, maintain conversational memory, and evaluate its own responses.
-
-The system combines multi-agent orchestration, tool calling, RAG, SQL analytics, Redis memory/cache, PostgreSQL, MCP, guardrails, observability, and automated evaluation into a single application.
+> An agentic AI system that autonomously researches, analyzes, queries business data, remembers context, and produces grounded answers using specialized AI agents and tools.
 
 ---
 
-## 🚀 Overview
+## 🌐 Try AURA
 
-Traditional chatbots mainly generate responses from a language model.
+### 💬 AURA Chatbot
+[Open AURA Chatbot](http://localhost:5173)
 
-AURA is designed differently.
+### ⚡ FastAPI Backend
+[Open FastAPI Backend](http://127.0.0.1:8000)
 
-Instead of relying only on the LLM, AURA can:
+### 📚 API Documentation
+[Open Swagger Docs](http://127.0.0.1:8000/docs)
 
-- Understand the user's intent
-- Route tasks to specialized agents
-- Query structured business data
-- Perform calculations
-- Search external information
-- Retrieve information from documents
-- Maintain short-term conversational memory
-- Maintain long-term memory
-- Use Redis for caching
-- Use PostgreSQL for persistent business data
-- Use MCP for tool integration
-- Apply SQL safety guardrails
-- Detect prompt-injection attempts
-- Evaluate generated answers
-- Retry weak answers
-- Track latency and system events
-- Serve the system through a FastAPI backend
-- Provide a React frontend
-- Run through Docker
+### ❤️ API Health
+[Check AURA Health](http://127.0.0.1:8000/health)
+
+> These links work when AURA is running locally.
 
 ---
 
-# 🧠 System Architecture
+# 🧠 What is AURA?
+
+AURA is a production-oriented **multi-agent AI system** designed to answer business and research questions by selecting the appropriate agent and tools instead of relying only on an LLM response.
+
+AURA can:
+
+- 🔎 Perform web research
+- 📊 Analyze business data
+- 🗄️ Query PostgreSQL databases
+- 📄 Retrieve information from documents/CV using RAG
+- 🧠 Maintain short-term and long-term memory
+- 🧮 Perform calculations
+- 🛡️ Block unsafe SQL operations
+- 🔄 Coordinate multiple specialized agents
+- 🧪 Evaluate generated responses
+- 📈 Monitor requests and agent execution
+
+---
+
+# 🏗️ System Architecture
 
 ```text
                          USER
                            │
                            ▼
-                    React Frontend
-                           │
-                           ▼
-                     FastAPI API
-                           │
-                           ▼
-                    AURA ORCHESTRATOR
-                           │
-             ┌─────────────┼─────────────┐
-             │             │             │
-             ▼             ▼             ▼
-       Research Agent   SQL Agent   Data Analyst
-             │             │             │
-             └─────────────┼─────────────┘
-                           │
-                           ▼
-                       TOOL LAYER
-             ┌─────────────┼─────────────┐
-             │             │             │
-             ▼             ▼             ▼
-        Web Search      Calculator      SQL
-             │             │             │
-             ├─────────────┼─────────────┤
-             │             │             │
-             ▼             ▼             ▼
-             RAG        PostgreSQL      MCP
-                           │
-                           ▼
-                     MEMORY LAYER
-                    ┌──────┴──────┐
-                    │             │
-                    ▼             ▼
-                  Redis        Long-term
-              Session Memory     Memory
-                    │
-                    ▼
-                 Evaluator
-                    │
-              ┌─────┴─────┐
-              │           │
-            PASS         RETRY
-              │           │
-              └─────┬─────┘
-                    ▼
-                FINAL ANSWER
+                 ┌──────────────────┐
+                 │    AURA API      │
+                 │     FastAPI      │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │   ORCHESTRATOR   │
+                 │  Agent Manager   │
+                 └────────┬─────────┘
+                          │
+          ┌───────────────┼────────────────┐
+          │               │                │
+          ▼               ▼                ▼
+   ┌────────────┐  ┌────────────┐  ┌────────────┐
+   │ Research   │  │ SQL Agent  │  │ Data       │
+   │ Agent      │  │            │  │ Analyst    │
+   └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
+         │               │                │
+         ▼               ▼                ▼
+     Web Search      PostgreSQL        Business Data
+         │
+         ▼
+       RAG
+         │
+         └───────────────┐
+                         ▼
+                    ┌───────────┐
+                    │  Memory   │
+                    │Redis + DB │
+                    └─────┬─────┘
+                          │
+                          ▼
+                   ┌────────────┐
+                   │  Critic /  │
+                   │ Evaluator  │
+                   └─────┬──────┘
+                         │
+                         ▼
+                    FINAL ANSWER
