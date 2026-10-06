@@ -3,41 +3,40 @@ import uuid
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from agents import Runner
-from agents.exceptions import InputGuardrailTripwireTriggered
 
-from app.model_config import model
 from app.orchestrator import create_orchestrator
-from app.memory import add_memory
+from app.sql_agent import sql_agent
+
 from app.memory_manager import (
+    format_recent_context,
     add_session_message,
-    get_recent_context,
 )
+
 from app.observability import (
-    configure_logging,
-    create_request_id,
     trace_operation,
     log_event,
 )
+
 from app.mcp_server import create_mcp_server
 
 
 # ============================================================
-# Configuration
+# LOGGING
 # ============================================================
 
-MAX_MESSAGE_LENGTH = 4000
-MAX_CONTEXT_MESSAGES = 10
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
 
-logger = logging.getLogger("AURA.API")
-
-configure_logging()
+logger = logging.getLogger("AURA_API")
 
 
 # ============================================================
-# FastAPI Application
+# FASTAPI APPLICATION
 # ============================================================
 
 app = FastAPI(
@@ -58,27 +57,23 @@ app.add_middleware(
         "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
 # ============================================================
-# Request / Response Models
+# REQUEST MODEL
 # ============================================================
 
 class ChatRequest(BaseModel):
-    message: str = Field(
-        ...,
-        min_length=1,
-        max_length=MAX_MESSAGE_LENGTH,
-    )
+    message: str
+    session_id: str | None = None
 
-    session_id: str | None = Field(
-        default=None,
-        max_length=100,
-    )
 
+# ============================================================
+# RESPONSE MODEL
+# ============================================================
 
 class ChatResponse(BaseModel):
     response: str
@@ -87,7 +82,7 @@ class ChatResponse(BaseModel):
 
 
 # ============================================================
-# Application State
+# GLOBAL OBJECTS
 # ============================================================
 
 mcp_server = None
@@ -95,7 +90,74 @@ orchestrator = None
 
 
 # ============================================================
-# Startup / Shutdown
+# SQL FAST-PATH DETECTOR
+# ============================================================
+
+def is_obvious_sql_question(
+    message: str,
+) -> bool:
+    """
+    Detect simple database questions that should
+    go directly to the SQL Agent.
+
+    This avoids unnecessary LLM routing through
+    the full orchestrator.
+    """
+
+    text = message.lower().strip()
+
+    sql_patterns = [
+
+        # Revenue
+        "total revenue",
+        "highest revenue",
+        "lowest revenue",
+        "highest revenue product",
+        "highest revenue region",
+        "revenue of",
+        "revenue by region",
+        "revenue by product",
+        "regional revenue",
+
+        # Cost
+        "total cost",
+        "cost of",
+        "cost by region",
+        "cost by product",
+
+        # Profit
+        "total profit",
+        "highest profit",
+        "lowest profit",
+        "most profitable",
+        "least profitable",
+        "most profitable product",
+        "most profitable region",
+        "profit of",
+        "profit by region",
+        "profit by product",
+        "regional profit",
+
+        # Sales
+        "how many sales",
+        "sales by region",
+        "sales by product",
+
+        # Database
+        "how many records",
+        "sales table",
+        "columns in the sales table",
+        "schema of the sales table",
+    ]
+
+    return any(
+        pattern in text
+        for pattern in sql_patterns
+    )
+
+
+# ============================================================
+# STARTUP
 # ============================================================
 
 @app.on_event("startup")
@@ -104,34 +166,46 @@ async def startup_event():
     global mcp_server
     global orchestrator
 
-    logger.info("Starting AURA API...")
-
     try:
-        mcp_server = create_mcp_server()
 
-        orchestrator = create_orchestrator(
-            mcp_server=mcp_server
+        logger.info(
+            "Starting AURA API..."
         )
 
-        logger.info("AURA orchestrator initialized successfully.")
+        # ----------------------------------------------------
+        # MCP SERVER
+        # ----------------------------------------------------
 
-    except Exception:
+        mcp_server = create_mcp_server()
+
+        logger.info(
+            "MCP server initialized successfully."
+        )
+
+        # ----------------------------------------------------
+        # ORCHESTRATOR
+        # ----------------------------------------------------
+
+        orchestrator = create_orchestrator(
+            mcp_server
+        )
+
+        logger.info(
+            "AURA orchestrator initialized successfully."
+        )
+
+    except Exception as exc:
 
         logger.exception(
-            "Failed to initialize AURA orchestrator."
+            "Failed to initialize AURA: %s",
+            exc,
         )
 
         raise
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-
-    logger.info("Shutting down AURA API...")
-
-
 # ============================================================
-# Health Check
+# HEALTH CHECK
 # ============================================================
 
 @app.get("/health")
@@ -145,35 +219,38 @@ async def health_check():
 
 
 # ============================================================
-# Chat Endpoint
+# CHAT ENDPOINT
 # ============================================================
 
 @app.post(
     "/chat",
     response_model=ChatResponse,
 )
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+):
 
-    request_id = create_request_id()
+    # ========================================================
+    # REQUEST ID
+    # ========================================================
 
-    # --------------------------------------------------------
-    # Generate / validate session
-    # --------------------------------------------------------
-
-    session_id = request.session_id
-
-    if not session_id:
-        session_id = str(uuid.uuid4())
-
-    log_event(
-        "CHAT_REQUEST",
-        request_id,
-        session_id=session_id,
+    request_id = str(
+        uuid.uuid4()
     )
 
-    # --------------------------------------------------------
-    # Validate message
-    # --------------------------------------------------------
+    # ========================================================
+    # SESSION ID
+    # ========================================================
+
+    session_id = (
+        request.session_id
+        if request.session_id
+        else str(uuid.uuid4())
+    )
+
+    # ========================================================
+    # USER MESSAGE
+    # ========================================================
 
     message = request.message.strip()
 
@@ -184,86 +261,65 @@ async def chat(request: ChatRequest):
             detail="Message cannot be empty.",
         )
 
-    if len(message) > MAX_MESSAGE_LENGTH:
+    logger.info(
+        "[%s] CHAT_REQUEST | session=%s",
+        request_id,
+        session_id,
+    )
 
-        raise HTTPException(
-            status_code=400,
-            detail="Message exceeds the maximum allowed length.",
-        )
+    log_event(
+        "CHAT_REQUEST",
+        request_id=request_id,
+        session_id=session_id,
+    )
 
-    # --------------------------------------------------------
-    # Load Redis short-term memory
-    # --------------------------------------------------------
+    # ========================================================
+    # LOAD SHORT-TERM MEMORY
+    # ========================================================
 
     try:
 
-        recent_context = get_recent_context(
-            session_id=session_id,
-            limit=MAX_CONTEXT_MESSAGES,
+        session_context = format_recent_context(
+            session_id,
+            limit=10,
         )
 
-        log_event(
-            "REDIS_MEMORY_LOADED",
+        logger.info(
+            "[%s] REDIS_MEMORY_LOADED",
             request_id,
-            session_id=session_id,
-            messages=len(recent_context),
         )
 
     except Exception as exc:
 
         logger.warning(
-            "[%s] Redis memory retrieval failed: %s",
+            "[%s] Could not load session memory: %s",
             request_id,
             exc,
         )
 
-        recent_context = []
+        session_context = ""
 
-    # --------------------------------------------------------
-    # Build contextual message
-    # --------------------------------------------------------
+    # ========================================================
+    # BUILD CONTEXTUAL MESSAGE
+    # ========================================================
 
-    if recent_context:
+    contextual_message = message
 
-        context_lines = []
-
-        for item in recent_context:
-
-            role = item.get(
-                "role",
-                "unknown",
-            )
-
-            content = item.get(
-                "content",
-                "",
-            )
-
-            context_lines.append(
-                f"{role.upper()}: {content}"
-            )
-
-        conversation_context = "\n".join(
-            context_lines
-        )
+    if session_context:
 
         contextual_message = f"""
 Previous conversation context:
 
-{conversation_context}
+{session_context}
 
-Current user message:
+Current user request:
 
 {message}
-"""
+""".strip()
 
-    else:
-
-        contextual_message = message
-
-    # --------------------------------------------------------
-    # Save user message to Redis
-    # --------------------------------------------------------
+    # ========================================================
+    # STORE USER MESSAGE
+    # ========================================================
 
     try:
 
@@ -273,88 +329,98 @@ Current user message:
             content=message,
         )
 
-        log_event(
-            "USER_MESSAGE_STORED",
+        logger.info(
+            "[%s] USER_MESSAGE_STORED",
             request_id,
-            session_id=session_id,
         )
 
     except Exception as exc:
 
         logger.warning(
-            "[%s] Failed to store user message in Redis: %s",
+            "[%s] Failed to store user message: %s",
             request_id,
             exc,
         )
 
-    # --------------------------------------------------------
-    # Run AURA
-    # --------------------------------------------------------
+    # ========================================================
+    # SELECT AGENT
+    # ========================================================
 
-    if orchestrator is None:
+    use_sql_fast_path = (
+        is_obvious_sql_question(message)
+    )
 
-        logger.error(
-            "[%s] Orchestrator is not initialized.",
+    if use_sql_fast_path:
+
+        selected_agent = sql_agent
+        operation_name = "sql_agent_fast_path"
+
+        logger.info(
+            "[%s] SQL_FAST_PATH_SELECTED",
             request_id,
         )
 
-        raise HTTPException(
-            status_code=503,
-            detail="AURA service is not ready.",
+    else:
+
+        if orchestrator is None:
+
+            logger.error(
+                "[%s] Orchestrator is not initialized.",
+                request_id,
+            )
+
+            raise HTTPException(
+                status_code=503,
+                detail="AURA orchestrator is not ready.",
+            )
+
+        selected_agent = orchestrator
+        operation_name = "orchestrator"
+
+        logger.info(
+            "[%s] ORCHESTRATOR_PATH_SELECTED",
+            request_id,
         )
+
+    # ========================================================
+    # RUN AGENT
+    # ========================================================
 
     try:
 
         with trace_operation(
-            "orchestrator",
+            operation_name,
             request_id,
         ):
 
             result = await Runner.run(
-                orchestrator,
+                selected_agent,
                 contextual_message,
             )
-
-    except InputGuardrailTripwireTriggered:
-
-        logger.warning(
-            "[%s] Input guardrail triggered.",
-            request_id,
-        )
-
-        raise HTTPException(
-            status_code=400,
-            detail="The request was blocked by AURA safety controls.",
-        )
 
     except Exception as exc:
 
         logger.exception(
-            "[%s] Orchestrator execution failed.",
+            "[%s] AURA execution failed: %s",
             request_id,
+            exc,
         )
 
-        error_text = str(exc).lower()
-
-        if (
-            "connection" in error_text
-            or "timeout" in error_text
-            or "api" in error_text
-        ):
-
-            raise HTTPException(
-                status_code=503,
-                detail="AURA's model service is temporarily unavailable.",
-            )
+        log_event(
+            "CHAT_ERROR",
+            request_id=request_id,
+            session_id=session_id,
+            error=str(exc),
+        )
 
         raise HTTPException(
             status_code=500,
-            detail="AURA could not complete the request.",
+            detail="AURA failed to process the request.",
         )
 
-    # --------------------------------------------------------
-    # Extract response
-    # --------------------------------------------------------
+    # ========================================================
+    # EXTRACT FINAL RESPONSE
+    # ========================================================
 
     response_text = getattr(
         result,
@@ -365,7 +431,7 @@ Current user message:
     if not response_text:
 
         logger.error(
-            "[%s] Empty response from orchestrator.",
+            "[%s] Empty response from AURA.",
             request_id,
         )
 
@@ -378,9 +444,9 @@ Current user message:
         response_text
     ).strip()
 
-    # --------------------------------------------------------
-    # Store assistant response in Redis
-    # --------------------------------------------------------
+    # ========================================================
+    # STORE ASSISTANT RESPONSE
+    # ========================================================
 
     try:
 
@@ -390,61 +456,39 @@ Current user message:
             content=response_text,
         )
 
-        log_event(
-            "ASSISTANT_MESSAGE_STORED",
+        logger.info(
+            "[%s] ASSISTANT_MESSAGE_STORED",
             request_id,
-            session_id=session_id,
         )
 
     except Exception as exc:
 
         logger.warning(
-            "[%s] Failed to store assistant message in Redis: %s",
+            "[%s] Failed to store assistant message: %s",
             request_id,
             exc,
         )
 
-    # --------------------------------------------------------
-    # Existing long-term memory
-    # --------------------------------------------------------
+    # ========================================================
+    # FINAL LOGGING
+    # ========================================================
 
-    try:
-
-        add_memory(
-            role="user",
-            content=message,
-            memory_type="conversation",
-        )
-
-        add_memory(
-            role="assistant",
-            content=response_text,
-            memory_type="conversation",
-        )
-
-        log_event(
-            "LONG_TERM_MEMORY_UPDATED",
-            request_id,
-            session_id=session_id,
-        )
-
-    except Exception as exc:
-
-        logger.warning(
-            "[%s] Long-term memory persistence failed: %s",
-            request_id,
-            exc,
-        )
-
-    # --------------------------------------------------------
-    # Final logging
-    # --------------------------------------------------------
+    logger.info(
+        "[%s] CHAT_COMPLETED | path=%s",
+        request_id,
+        operation_name,
+    )
 
     log_event(
         "CHAT_COMPLETED",
-        request_id,
+        request_id=request_id,
         session_id=session_id,
+        operation=operation_name,
     )
+
+    # ========================================================
+    # RETURN RESPONSE
+    # ========================================================
 
     return ChatResponse(
         response=response_text,

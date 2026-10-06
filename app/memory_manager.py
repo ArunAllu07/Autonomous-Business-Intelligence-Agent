@@ -10,20 +10,36 @@ from app.redis_client import (
 )
 
 
-# Redis configuration
+# ============================================================
+# REDIS CONFIGURATION
+# ============================================================
+
 SESSION_TTL = 60 * 60 * 24  # 24 hours
 MAX_RECENT_MESSAGES = 20
 
+
+# ============================================================
+# SESSION KEY
+# ============================================================
 
 def _session_key(session_id: str) -> str:
     """Generate Redis key for a conversation session."""
     return f"aura:session:{session_id}"
 
 
-def _load_session(session_id: str) -> list[dict[str, Any]]:
+# ============================================================
+# LOAD SESSION
+# ============================================================
+
+def _load_session(
+    session_id: str,
+) -> list[dict[str, Any]]:
     """Load short-term conversation memory from Redis."""
+
     try:
-        raw_data = get_value(_session_key(session_id))
+        raw_data = get_value(
+            _session_key(session_id)
+        )
 
         if not raw_data:
             return []
@@ -35,9 +51,17 @@ def _load_session(session_id: str) -> list[dict[str, Any]]:
 
         return data
 
-    except (json.JSONDecodeError, TypeError, ValueError):
+    except (
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ):
         return []
 
+
+# ============================================================
+# SAVE SESSION
+# ============================================================
 
 def _save_session(
     session_id: str,
@@ -45,18 +69,28 @@ def _save_session(
 ) -> bool:
     """Save short-term conversation memory to Redis."""
 
-    # Keep only the most recent messages
     messages = messages[-MAX_RECENT_MESSAGES:]
 
     try:
         return set_value(
             _session_key(session_id),
-            json.dumps(messages, ensure_ascii=False),
+            json.dumps(
+                messages,
+                ensure_ascii=False,
+            ),
             SESSION_TTL,
         )
-    except (TypeError, ValueError):
+
+    except (
+        TypeError,
+        ValueError,
+    ):
         return False
 
+
+# ============================================================
+# ADD SESSION MESSAGE
+# ============================================================
 
 def add_session_message(
     session_id: str,
@@ -64,13 +98,15 @@ def add_session_message(
     content: str,
 ) -> bool:
     """
-    Add a message to the user's short-term Redis memory.
+    Add a message to short-term Redis memory.
     """
 
     if not session_id or not content:
         return False
 
-    messages = _load_session(session_id)
+    messages = _load_session(
+        session_id
+    )
 
     message = {
         "role": role,
@@ -80,44 +116,75 @@ def add_session_message(
 
     messages.append(message)
 
-    return _save_session(session_id, messages)
+    return _save_session(
+        session_id,
+        messages,
+    )
 
+
+# ============================================================
+# GET SESSION MESSAGES
+# ============================================================
 
 def get_session_messages(
     session_id: str,
 ) -> list[dict[str, Any]]:
-    """Return recent conversation messages."""
+    """Return stored messages for a session."""
 
     if not session_id:
         return []
 
-    return _load_session(session_id)
+    return _load_session(
+        session_id
+    )
 
 
-def clear_session(session_id: str) -> bool:
+# ============================================================
+# CLEAR SESSION
+# ============================================================
+
+def clear_session(
+    session_id: str,
+) -> bool:
     """Delete a conversation session from Redis."""
 
     if not session_id:
         return False
 
-    return delete_value(_session_key(session_id))
+    return delete_value(
+        _session_key(session_id)
+    )
 
 
-def get_session_count(session_id: str) -> int:
-    """Return number of messages stored in a session."""
+# ============================================================
+# SESSION COUNT
+# ============================================================
 
-    return len(get_session_messages(session_id))
+def get_session_count(
+    session_id: str,
+) -> int:
+    """Return the number of messages in a session."""
 
+    return len(
+        get_session_messages(
+            session_id
+        )
+    )
+
+
+# ============================================================
+# RECENT CONTEXT
+# ============================================================
 
 def get_recent_context(
     session_id: str,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """
-    Return the most recent messages for agent context.
-    """
+    """Return the most recent messages."""
 
-    messages = get_session_messages(session_id)
+    messages = get_session_messages(
+        session_id
+    )
 
     if limit <= 0:
         return []
@@ -125,16 +192,23 @@ def get_recent_context(
     return messages[-limit:]
 
 
+# ============================================================
+# FORMATTED CONTEXT
+# ============================================================
+
 def format_recent_context(
     session_id: str,
     limit: int = 10,
 ) -> str:
     """
-    Convert recent Redis memory into text that can be
-    passed to an agent.
+    Convert recent conversation memory into
+    text suitable for an agent.
     """
 
-    messages = get_recent_context(session_id, limit)
+    messages = get_recent_context(
+        session_id,
+        limit,
+    )
 
     if not messages:
         return ""
@@ -142,25 +216,37 @@ def format_recent_context(
     formatted = []
 
     for message in messages:
-        role = message.get("role", "unknown")
-        content = message.get("content", "")
+
+        role = message.get(
+            "role",
+            "unknown",
+        )
+
+        content = message.get(
+            "content",
+            "",
+        )
 
         formatted.append(
             f"{role.upper()}: {content}"
         )
 
-    return "\n".join(formatted)
+    return "\n".join(
+        formatted
+    )
 
 
-# -------------------------------------------------------------------
-# Simple fact extraction
-# -------------------------------------------------------------------
+# ============================================================
+# FACT EXTRACTION
+# ============================================================
 
-def extract_facts(text: str) -> dict[str, str]:
+def extract_facts(
+    text: str,
+) -> dict[str, str]:
     """
-    Extract simple user facts from conversation text.
+    Extract simple user facts from text.
 
-    This is intentionally conservative.
+    This intentionally remains conservative.
     """
 
     if not text:
@@ -194,7 +280,10 @@ def extract_facts(text: str) -> dict[str, str]:
             )
 
             if match:
-                value = match.group(1).strip()
+
+                value = match.group(
+                    1
+                ).strip()
 
                 if value:
                     facts[fact_name] = value
@@ -204,19 +293,21 @@ def extract_facts(text: str) -> dict[str, str]:
     return facts
 
 
-# -------------------------------------------------------------------
-# Redis health
-# -------------------------------------------------------------------
+# ============================================================
+# REDIS HEALTH
+# ============================================================
 
 def redis_memory_available() -> bool:
-    """
-    Check whether Redis-backed memory is available.
-    """
+    """Check whether Redis-backed memory is available."""
 
     try:
-        from app.redis_client import check_redis_connection
+
+        from app.redis_client import (
+            check_redis_connection,
+        )
 
         return check_redis_connection()
 
     except Exception:
+
         return False
